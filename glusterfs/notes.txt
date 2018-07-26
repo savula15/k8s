@@ -1,0 +1,75 @@
+Refer: https://www.itzgeek.com/how-tos/linux/ubuntu-how-tos/install-and-configure-glusterfs-on-ubuntu-16-04-debian-8.html
+
+sudo apt-get install -y software-properties-common
+sudo add-apt-repository ppa:gluster/glusterfs-4.1
+
+sudo apt-get update
+sudo apt-get install -y glusterfs-server
+
+sudo systemctl status glusterfs-server.service
+sudo systemctl status rpcbind.socket
+
+To verify the version:
+
+sudo glusterd --version
+sudo glusterfs --version
+
+
+skip remaing checks but check these:
+
+sudo gluster peer probe <node-ip>
+sudo gluster peer status
+sudo gluster pool list
+
+Heketi workarounds
+=========================================
+
+add the following to each nk8s nodes that need to be participated in glusterfs
+
+sudo modprobe dm_snapshot
+sudo modprobe dm_mirror
+sudo modprobe dm_thin_pool
+
+sudo systemctl stop rpcbind.socket
+sudo rm -rf /var/lib/glusterd #just if in case
+
+==================================================================================================
+
+Note: Ensure to create a new namespace. say "development" so that you can isolate glusterfs pods etc.
+
+Deploy glusterfs pods on k8s using gk-deploy. Refer the following
+
+** ensure to get "master" branch
+https://github.com/gluster/gluster-kubernetes/tree/stable
+
+and also refer to "setup" guide at the above github link
+
+If glusterfs service doesnt start on pods,
+follow workaround at: https://github.com/heketi/heketi/issues/656
+
+Note: if deploy-heketi errors out, execute the following cmd manually on all above nodes:
+sudo pvcreate --metadatasize=128M --dataalignment=256K '/dev/sdc' -ff
+
+==============================================================================================
+
+Once gk-deploy script is run successfully, create storage class as follows:
+
+gluster-storage-class.yml
+==========================
+
+apiVersion: storage.k8s.io/v1beta1
+kind: StorageClass
+metadata:
+  name: gluster-heketi
+provisioner: kubernetes.io/glusterfs
+parameters:
+  resturl: "http://10.233.97.131:8080"
+  restuser: "joe"
+  restuserkey: "My Secret Life"
+
+sudo kubectl create -f ~/k8s_glusterfs/gluster-storage-class.yml -n development
+
+patch it to make it as default storage-class:
+kubectl patch storageclass <your-class-name> -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+
