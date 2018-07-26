@@ -9,6 +9,8 @@ https://github.com/kubernetes-incubator/kubespray#requirements
 
 5 ubuntu VM's
 ==============
+VMware VM's
+with 2 HDDs ==> 1 with 50GB and anotehr with 450GB
 sudo apt-get install python-minimal -y
 sudo visudo ==> add NOPASSWD to %sudo group
 
