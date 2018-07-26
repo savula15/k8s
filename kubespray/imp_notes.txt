@@ -59,6 +59,8 @@ Reference: https://kubernetes.io/docs/tasks/access-application-cluster/configure
 
 cp "admin.conf" under /etc/k8s/ on master node to "config" under ~/.kube/
 
+export KUBECONFIG=$KUBECONFIG:$HOME/.kube/config #you can also put this in ~/bash_profile
+
 sudo kubectl config --kubeconfig=config set-cluster cluster.local --server=https://10.173.47.99:6443 --certificate-authority=/home/test/.kube/ca.pem
 
 sudo kubectl config --kubeconfig=config set-credentials admin-cluster.local --certificate-authority=/home/test/.kube/ca.pem --client-key=/home/test/.kube/admin-node1-key.pem --client-certificate=/home/test/.kube/admin-node1.pem
@@ -69,8 +71,10 @@ sudo kubectl config --kubeconfig=config set-context admin-cluster.local --cluste
 
 helm and tiller caveats
 ========================
+check "kubectl config current-context" once
+and then do "helm init" which will deploy tiller into k8s cluster
 
-In order for helm installto work:
+In order for helm install to work:
 
 kubectl create serviceaccount --namespace kube-system tiller
 
