@@ -1,0 +1,38 @@
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: <user>
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: <user>
+  name: <user>.snaproute.io
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: dev-role-binding
+  namespace: <user>
+subjects:
+  - kind: User
+    name: "oidc:<user>@snaproute.com"
+roleRef:
+  kind: Role
+  name: <user>.snaproute.io
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: ResourceQuota
+apiVersion: v1
+metadata:
+  name: restrict-number-of-pods
+  namespace: <user>
+spec:
+  hard:
+    resourcequotas: "1"
+    pods: "5"
+    services: "4"

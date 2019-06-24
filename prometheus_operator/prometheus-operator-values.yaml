@@ -1,0 +1,29 @@
+global:
+  rbac:
+    pspEnabled: false
+
+alertmanager:
+  service:
+    type: LoadBalancer 
+
+kube-state-metrics:
+  podSecurityPolicy:
+    enabled: false
+
+prometheusOperator:
+  service:
+    type: LoadBalancer 
+  createCustomResource: false
+
+prometheus:
+  service:
+    type: LoadBalancer
+  prometheusSpec:
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: rook-ceph-block
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi

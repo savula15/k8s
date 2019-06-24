@@ -1,0 +1,310 @@
+Nodes prep:
+============
+
+hostnames: master, node1, node2 etc...
+
+Ubuntu 16.04.6 LTS
+
+create bond interface with all nic cards part of it
+    - can be created during ubuntu os install (only for ubuntu 18.04 or later)
+    - out of band after install. can be /etc/network/interfaces (or netplan for ubuntu 18.04)
+
+        snaproute@master:~$ cat /etc/network/interfaces
+        # This file describes the network interfaces available on your system
+        # and how to activate them. For more information, see interfaces(5).
+
+        source /etc/network/interfaces.d/*
+
+        # The loopback network interface
+        auto lo
+        iface lo inet loopback
+
+
+        auto eno1
+        iface eno1 inet manual
+            bond-master bond0
+
+        auto eno2
+        iface eno2 inet manual
+            bond-master bond0
+
+        auto eno3
+        iface eno3 inet manual
+            bond-master bond0
+
+        auto eno4
+        iface eno4 inet manual
+            bond-master bond0
+
+        auto bond0
+        iface bond0 inet static
+            address 192.168.100.20
+            netmask 255.255.255.0
+            gateway 192.168.100.1
+            dns-nameservers 8.8.8.8 8.8.4.4
+
+            bond-mode 4
+            bond-miimon 100
+            bond-lacp-rate 1
+            bond-slaves eno1 eno2 eno3 eno4
+            bond-xmit_hash_policy layer3+4
+            bond-downdelay 0
+            bond-updelay 0
+
+sudo visudo
+    NOPASSWD:ALL for sudoers group
+
+sudo apt-get update
+
+sudo apt-get -yq upgrade
+
+mkdir ~/.ssh
+chmod 0700 ~/.ssh
+ssh-keygen -t rsa -b 4096
+
+ssh-copy-id -i ~/.ssh/id_rsa.pub <user>@<other-servers>
+
+sudo apt-get install python-pip
+
+pip install virtualenv
+
+install kvm support tools:
+
+kvm-ok
+    sudo apt install cpu-checker -y
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -yq install qemu-kvm libvirt-bin virtinst
+    sudo systemctl start libvirtd.service
+    sudo groupadd libvirt
+    sudo usermod -a -G libvirt $(whoami)
+
+
+sudo vi /etc/sysctl.conf ==> net.ipv4.ip_forward=1
+sudo sysctl -p
+
+add hostname resolutions to /etc/hosts
+
+High-Availability
+==================
+
+Ensure VIP dns name --> IP resolution is added to /etc/hosts
+
+heartbeat install and config on all nodes:
+
+echo "net.ipv4.ip_nonlocal_bind=1" | sudo tee -a /etc/sysctl.d/ha.conf
+
+sudo sysctl -p
+sudo apt-get -yq update
+sudo apt-get -yq install heartbeat
+cat /etc/hosts
+
+calculate md5sum ==> echo -n <VIP>:<LB BIND PORT> | md5sum | awk '{print $1}'
+    for e.g., echo -n 192.168.100.25:6443 | md5sum | awk '{print $1}' ===> "3d1c673d845e464986178b0059b6bb8b"
+
+echo -e "auth 1\n1 md5 3d1c673d845e464986178b0059b6bb8b" | sudo tee /etc/ha.d/authkeys
+sudo chmod 600 /etc/ha.d/authkeys
+sudo vi /etc/ha.d/ha.cf
+    for e.g., with 3nodes HA:
+
+        #       keepalive: how many seconds between heartbeats
+        #
+        keepalive 2
+        #
+        #       deadtime: seconds-to-declare-host-dead
+        #
+        deadtime 10
+        #
+        #       What UDP port to use for udp or ppp-udp communication?
+        #
+        udpport  696
+        bcast  bond0
+        mcast bond0 225.0.0.6 696 1 0
+        ucast bond0 192.168.100.20
+        #
+        #       Facility to use for syslog()/logger (alternative to log/debugfile)
+        #
+        logfacility     local0
+        #
+        #       Tell what machines are in the cluster
+        #       node    nodename ...    -- must match uname -n
+        node    master
+        node    node1
+        node    node2
+
+sudo vi /etc/ha.d/haresources
+        node <VIP>
+        for e.g., master 192.168.100.25
+
+sudo systemctl restart heartbeat
+
+HAProxy install on all nodes:
+
+sudo apt-get -yq update
+sudo apt-get -yq install haproxy
+sudo vi /etc/haproxy/haproxy.cfg
+        example config looks like below:
+
+        global
+        log /dev/log local0
+        log /dev/log local1 debug
+        chroot /var/lib/haproxy
+        tune.ssl.default-dh-param 2048
+
+        defaults
+        log global
+        timeout connect 5000ms
+        timeout check 5000ms
+        timeout server 3600s
+        timeout client 3600s
+
+        listen stats
+        bind :9000
+        mode http
+        stats enable
+        stats hide-version
+        stats realm Haproxy\ Statistics
+        stats uri /stats
+
+        frontend kubernetes
+        bind 192.168.100.25:6443
+        bind 0.0.0.0:443
+        mode tcp
+        option tcplog
+        use_backend kubernetes-master-nodes
+
+        backend kubernetes-master-nodes
+        mode tcp
+        option tcp-check
+        balance roundrobin
+        default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
+
+        server master 192.168.100.20:16443 check
+        server node1 192.168.100.21:16443 check
+        server node2 192.168.100.22:16443 check
+
+sudo systemctl restart haproxy
+
+verify:
+
+ifconfig ==> verify if sub interface bond0.0 is created with VIP and on one of the node it is active
+ping <VIP>
+
+Kubespray run
+==============
+
+Prep for kubespray run:
+
+git clone stable branch from https://github.com/kubernetes-sigs/kubespray.git
+    for e.g., git clone -b release-2.10 https://github.com/kubernetes-sigs/kubespray.git
+
+cd kubespray
+source ~/.virtualenvs/venv2/bin/activate
+cp ~/.ssh/id_rsa node.pem on master or ansible host
+chmod 600 node.pem
+update ansible.config with private_key_file=<path to node.pem>
+
+cp -rfp inventory/sample inventory/mycluster
+cp inventory/mycluster/inventory.ini inventory/mycluster/inventory.ini.orig
+update inventory/mycluster/inventory.ini as follows appropriately: this example is for 3 node master cluster
+
+        # ## Configure 'ip' variable to bind kubernetes services on a
+        # ## different ip than the default iface
+        # ## We should set etcd_member_name for etcd cluster. The node that is not a etcd member do not need to set the value, or can set the empty string value.
+        [all]
+        master ansible_host=192.168.100.20  ip=192.168.100.20 ansible_user=snaproute ansible_become=yes ansible_become_pass=Snapr0ute1 etcd_member_name=etcd1
+        node1 ansible_host=192.168.100.21  ip=192.168.100.21 ansible_user=snaproute ansible_become=yes ansible_become_pass=Snapr0ute1 etcd_member_name=etcd2
+        node2 ansible_host=192.168.100.22  ip=192.168.100.22 ansible_user=snaproute ansible_become=yes ansible_become_pass=Snapr0ute1 etcd_member_name=etcd3
+        # ## configure a bastion host if your nodes are not directly reachable
+        # bastion ansible_host=x.x.x.x ansible_user=some_user
+
+        [kube-master]
+        master
+        node1
+        node2
+
+        [etcd]
+        master
+        node1
+        node2
+
+        [kube-node]
+        master
+        node1
+        node2
+
+        [k8s-cluster:children]
+        kube-master
+        kube-node
+
+ansible -i inventory/mycluster/inventory.ini all -m ping ==> verify all nodes pingable
+
+review all.yml at inventory/mycluster/group_vars/all/all.yml
+Note:   pay special attention to loadbalancer bind port vs api server bind port. they should be different to avoid 
+        kube-api server exiting and thereby creating kubelet fail to come up
+
+review k8s-cluster.yml at inventory/mycluster/group_vars/k8s-cluster/k8s-cluster.yml
+
+review cluster.yml
+
+run kubespray playbooks using:
+    ansible-playbook -i inventory/mycluster/inventory.ini --become --become-user=root cluster.yml
+
+add user to docker group:
+
+sudo systemctl enable docker.service
+sudo systemctl start docker.service
+sudo groupadd docker
+sudo usermod -aG docker $(whoami)
+
+Reboot all servers:
+    sudo reboot
+
+verify 'docker images' (Without sudo) can be run successfully!
+
+Harbor/Chartmuseaum registry/chartrepo prep
+============================================
+perform on all nodes in cluster
+
+Add following dns name to ip resolution to /etc/hosts (repeat if you have more than one registry)
+    harbor.demo.local 192.168.100.100
+
+write docker certs for registry access:
+
+    sudo mkdir -p /etc/docker/certs.d/<Harbor url>
+        for e.g., sudo mkdir -p /etc/docker/certs.d/harbor.demo.local
+
+    Add harbor registry CA cert context to ===> sudo vi /etc/docker/certs.d/harbor.demo.local/ca.crt
+
+system ca update:
+
+    Add harbor registry CA cert content to ===> sudo vi /usr/share/ca-certificates/harbor.demo.local.crt
+
+    Update harbor cert in system ca certs ===> echo "harbor.demo.local.crt" | sudo tee -a /etc/ca-certificates.conf
+
+    sudo update-ca-certificates
+
+
+kubevirt deploy
+================
+kubectl create -f kubevirt.yaml
+
+helm and tiller install
+========================
+curl https://raw.githubusercontent.com/helm/helm/master/scripts/get > get_helm.sh
+chmod 700 get_helm.sh
+./get_helm.sh --version ${HELM_VERSION}
+    for e.g., ./get_helm.sh --version v2.11.0
+rm ./get_helm.sh
+
+kubectl --namespace kube-system create serviceaccount tiller
+kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
+helm init --service-account tiller --upgrade --wait
+sudo chown -R $(id -u):$(id -g) ${HOME}/.helm/
+helm repo update
+
+Metallb install
+================
+kubectl create -f metallb.yaml
+
+helm repo update
+helm search metallb ==> get latest version
+helm upgrade --install --namespace kube-system metallb stable/metallb --version=${METALLB_VERSION}

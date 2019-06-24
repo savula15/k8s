@@ -1,6 +1,4 @@
 ---
-- import_tasks: pre-upgrade.yml
-
 - name: Flannel | Create Flannel manifests
   template:
     src: "{{item.file}}.j2"
@@ -11,4 +9,3 @@
   register: flannel_node_manifests
   when:
     - inventory_hostname in groups['kube-master']
-    - rbac_enabled or item.type not in rbac_resources
