@@ -2,8 +2,8 @@
 
 ## Introduction
 
-[Virtualization] is the sdk that provides an interface to deploy CN-NOS VM's. 
-Its gateway to the CN-NOS virtualization !!
+[Virtualization] is the sdk that provides an interface to deploy VM's. 
+Its gateway to the virtualization !!
 
 The supported APIs are list below.
 
@@ -27,8 +27,8 @@ pip install virtualization
 ```
 from virtualization import Virtualization
 
-cluster = "dev-cluster1"
-user = "savula"
+cluster = "cluster1"
+user = "test"
 
 vm = virtualization.Virtualization(cluster, user)
 
